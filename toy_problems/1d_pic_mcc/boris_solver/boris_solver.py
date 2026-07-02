@@ -1,6 +1,7 @@
 # import numpy for vector calculations and matplotlib for plotting
 import numpy as np
 import matplotlib.pyplot as plt
+import os
 
 # define global variables for the particle's properties
 Q = 1.0
@@ -8,7 +9,7 @@ M = 1.0
 
 # define background fields
 B_Z = 1.0
-E_NON = 0.0
+E_NON = 1.0
 
 # analytical reference
 def get_analytic_solution(t, v0): 
@@ -107,6 +108,9 @@ def run_simulation(scheme_func, dt, t_max, x0, v0):
     return time_array, x_hist, v_hist
 
 
+# Create results directory if it doesn't exist
+os.makedirs('results', exist_ok=True)
+
 t_max = 20.0  
 x0 = np.array([0.0, 0.0, 0.0])
 v0 = np.array([0.0, 1.0, 0.0]) 
@@ -133,7 +137,7 @@ plt.ylabel('Y Position')
 plt.axis('equal')
 plt.grid(True)
 plt.legend()
-plt.savefig('trajectory_verification.png')
+plt.savefig('results/trajectory_verification.png')
 plt.show()
 
 # Step 2: Timestep Sensitivity Sweep
@@ -165,5 +169,5 @@ plt.xlabel('Timestep Size ($\Delta t$) [Log Scale]')
 plt.ylabel('Global Position Error at $t_{max}$ [Log Scale]')
 plt.grid(True, which="both", ls="--")
 plt.legend()
-plt.savefig('error_convergence_analysis.png')
+plt.savefig('results/error_convergence_analysis.png')
 plt.show()
