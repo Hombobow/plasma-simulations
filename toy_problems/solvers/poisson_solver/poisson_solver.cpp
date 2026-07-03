@@ -158,4 +158,16 @@ void computeEF(double dx, dvector &ef, const dvector &phi, bool second_order)
     }
 }
 
+double XtoL(double x, double dx, double x0)
+{
+    return (x - x0) / dx;
+}
+
+double gather(double li, const dvector &field)
+{
+    int i = (int)li;
+    double di = li - i;
+    return field[i] * (1 - di) + field[i + 1] * di;
+}
+
 Rnd rnd;

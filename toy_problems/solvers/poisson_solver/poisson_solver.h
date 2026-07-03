@@ -83,5 +83,7 @@ protected:
 bool outputCSV(const World &world);
 void solvePotentialDirect(double dx, dvector &phi, const dvector &rho);
 void computeEF(double dx, dvector &ef, const dvector &phi, bool second_order = true);
+double XtoL(double x, double dx, double x0 = 0);
+double gather(double li, const dvector &field);
 
 #endif // POISSON_SOLVER_H
