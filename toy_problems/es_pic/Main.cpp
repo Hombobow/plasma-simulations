@@ -1,5 +1,8 @@
 #include "World.h"
 
+using Field = Field<double>; // field of doubles
+using FieldI = Field<int>;   // field of integers
+
 int main(int argc, char *args[])
 {
     World world(/*...*/); // initialize computational domain

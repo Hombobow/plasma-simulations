@@ -1,3 +1,6 @@
+#ifndef _WORLD_H
+#define _WORLD_H
+
 class World
 {
 public:
@@ -15,3 +18,5 @@ protected:
     double xm[3]; // mesh max bound
     double xc[3]; // domain centroid
 };
+
+#endif
