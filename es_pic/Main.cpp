@@ -1,7 +1,6 @@
 #include "World.h"
-
-using Field = Field<double>; // field of doubles
-using FieldI = Field<int>;   // field of integers
+#include "Field.h"
+#include "Vec3.h"
 
 int main(int argc, char *args[])
 {

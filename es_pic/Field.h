@@ -166,4 +166,7 @@ protected:
     T ***data;
 };
 
+using Field = Field_<double>; // field of doubles
+using FieldI = Field_<int>;   // field of integers
+
 #endif // _FIELD_H

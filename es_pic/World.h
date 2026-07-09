@@ -7,7 +7,11 @@ public:
     World(int ni, int nj, int nk); // constructor
 
     // sets the mesh span, also recomputes cell spanning
-    void setExtents(double x1, double y1, double z1, double x2, double y2, double z2);
+    void setExtents(const double3 &_x0, double3 &_xm)
+    {
+        x0 = _x0; // set our copy of the original
+        xm = _xm; // do the same for xmax
+    }
 
     const int nn[3];      // number of nodes in x, y, z
     const int ni, nj, nk; // number of nodes in individual variables
