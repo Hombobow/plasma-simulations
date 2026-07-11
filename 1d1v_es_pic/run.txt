@@ -1,0 +1,2 @@
+g++ main.cpp initialization.cpp grid.cpp particle.cpp -o pic -I/opt/homebrew/include
+./pic
