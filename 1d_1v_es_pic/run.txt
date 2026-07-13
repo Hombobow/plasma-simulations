@@ -1,0 +1,2 @@
+g++ -I/opt/homebrew/include -I/opt/homebrew/opt/libomp/include -L/opt/homebrew/opt/libomp/lib -lomp -Xpreprocessor -fopenmp main.cpp initialization.cpp grid.cpp particle.cpp -o pic
+./pic
