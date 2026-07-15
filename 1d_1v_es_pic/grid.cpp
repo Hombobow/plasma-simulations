@@ -4,9 +4,6 @@
 
 using namespace std;
 
-
-
-
 GridData::GridData(const int n_cells_init, const vector<double> n_e_init, const vector<double> n_i_init, const vector<double>phi_init, 
     const vector<double> E_init, const vector<double> x_cells_init, const vector<double> x_nodes_init ){
     n_cells = n_cells_init; 
@@ -41,10 +38,8 @@ GridData::GridData(const int n_cells_init, const vector<double> n_e_init, const 
             A_inv[i][j] = A(i,j) * dx * dx ; 
         }
     }
-
-
-
 }
+
 double GridData::get_E_energy(){
     E_energy = 0.0; 
     for (int i = 0; i < n_nodes -1; i++){

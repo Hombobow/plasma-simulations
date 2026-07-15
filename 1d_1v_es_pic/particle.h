@@ -13,7 +13,7 @@ class Particle{
     public: 
         double x; 
         double vx; 
-        double w ; 
+        double w; 
         // constructor
         Particle(double x_init = 0.0, double vx_init = 0.0 , double m = 1.0, double q = -1.0 , double w = 1.0);
 

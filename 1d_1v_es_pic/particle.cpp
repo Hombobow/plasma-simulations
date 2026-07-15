@@ -9,7 +9,7 @@ Particle::Particle(double x_init , double vx_init, double m_init , double q_init
     vx = vx_init; 
     m = m_init; 
     q = q_init; 
-    w = w_init ; // this is a stale value that isn't set correctly; needs to be updated properly @ initialization
+    w = w_init; // this is a stale value that isn't set correctly; needs to be updated properly @ initialization
 }
 
 double Particle::get_x(){
