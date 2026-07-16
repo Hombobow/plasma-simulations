@@ -1,1 +1,6 @@
 /1d_1v_es_pic/figures/
+1d_1v_es_pic/output/
+1d_1v_es_pic/pic
+1d_1v_es_pic/__pycache__/
+__pycache__/
+.DS_Store
