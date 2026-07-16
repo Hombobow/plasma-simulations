@@ -18,7 +18,7 @@ static void clear_output_dirs(){
 
 
 using namespace std;
-int scaling = 4; 
+int scaling = 1; 
 int n_steps; 
 int N_ppc; 
 int n_cells; 
@@ -62,7 +62,7 @@ void initialize(){
             x_cells_init[i] = i * dx + dx / 2;
             x_nodes_init[i] = i * dx; 
 
-            n_i_init[i] = 1; 
+            n_i_init[i] = 1;  // (or ne0, a fixed number) — a static background array
             n_e_init[i] = ne0 + delta_n * sin(x_cells_init[i] * k ) ;   
             phi_init[i] = - delta_n / (k*k) * sin(k * x_cells_init[i]) ; 
             E_init[i]   =   delta_n / k     * cos(k * x_nodes_init[i]) ;   
@@ -120,9 +120,11 @@ void initialize(){
                   << "  delta_n      = " << delta_n << "\n"
                   << "  ni           = " << ni << endl;
     }
+    
+    
     else if (problem == "twostream") { // if problem == "twostream"
-        double factor = 3;
-        N_ppc = 2000 * pow(2, factor);
+        double factor = 6;
+        N_ppc = 1000 * pow(2, factor);
         double v_th = 0.00; // thermal velocity (normalized)
         double v_drift = 0.5; // drift velocity (must be > v_th for instability)
         
@@ -277,18 +279,20 @@ int output_data(int n_output){
         }
     }
 
-    // {
-    //     std::ostringstream name;
-    //     name << "output/fields/fields_" << n_output << ".csv";
-    //     std::ofstream f(name.str());
-    //     f << std::setprecision(9);
-    //     f << "x,n,E,phi\n";
-    //     for (int i = 0; i < n_cells; i++){
-    //         double E_cell = 0.5 * (datagrid.E[i] + datagrid.E[i + 1]);
-    //         f << datagrid.x_cells[i] << "," << datagrid.n_e[i] << ","
-    //           << E_cell << "," << datagrid.phi[i] << "\n";
-    //     }
-    // }
+    {
+        if (n_output == 0) {
+            std::ostringstream name;
+            name << "output/fields/fields_" << n_output << ".csv";
+            std::ofstream f(name.str());
+            f << std::setprecision(9);
+            f << "x,n,E,phi\n";
+            for (int i = 0; i < n_cells; i++){
+                double E_cell = 0.5 * (datagrid.E[i] + datagrid.E[i + 1]);
+                f << datagrid.x_cells[i] << "," << datagrid.n_e[i] << ","
+                << E_cell << "," << datagrid.phi[i] << "\n";
+            }
+        }   
+    }
 
     {
         double ES = datagrid.get_E_energy();       
@@ -314,10 +318,14 @@ int run_loop(){
 
     clear_output_dirs();
     
-    int tenth = n_steps / 10; if (tenth < 1) tenth = 1;   // progress bar: ~one block per 10%
+    int last_percent = -1;
 
     for (nt = 0; nt < n_steps; nt++){
-        if (nt % tenth == 0) std::cout << "[]" << std::flush;
+        int percent = (nt + 1) * 100 / n_steps;
+        if (percent != last_percent){
+            std::cout << "\rProgress: " << std::setw(3) << percent << "%" << std::flush;
+            last_percent = percent;
+        }
         if (nt % scaling == 0){
             output_data(nt/scaling);
 
@@ -327,6 +335,7 @@ int run_loop(){
         datagrid.poisson_solve(); 
         datagrid.update_E(); 
     }
+    std::cout << "\n";
 
     return 1; 
 }
