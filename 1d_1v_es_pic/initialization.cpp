@@ -18,7 +18,7 @@ static void clear_output_dirs(){
 
 
 using namespace std;
-int scaling = 1; 
+int scaling = 12; 
 int n_steps; 
 int N_ppc; 
 int n_cells; 
@@ -123,7 +123,7 @@ void initialize(){
     
     
     else if (problem == "twostream") { // if problem == "twostream"
-        double factor = 6;
+        double factor = 2;
         N_ppc = 1000 * pow(2, factor);
         double v_th = 0.00; // thermal velocity (normalized)
         double v_drift = 0.5; // drift velocity (must be > v_th for instability)
@@ -157,7 +157,6 @@ void initialize(){
         random_device rd; std::mt19937 gen(rd()); std::uniform_real_distribution<double> dis(0.0, 1.0);
 
         for (int i = 0; i < n_cells; i++) {
-            // integer count per beam (round); a double in `j < num` truncates and total != N_ppc*n_cells
             int num_electrons = static_cast<int>(std::round(
                 N_ppc * (1.0 + delta_n * sin(k * datagrid.x_cells[i])) / 2.0));
 

@@ -73,6 +73,3 @@ int GridData::update_E(){
     E[n_nodes - 1] = -(phi[0] - phi[n_cells - 1])/dx ; 
     return 1; 
 }
-
-
-

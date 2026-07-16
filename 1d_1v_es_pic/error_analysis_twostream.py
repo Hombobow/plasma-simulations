@@ -11,10 +11,11 @@ For each saved run:
 
 Two sweeps (edit the path lists below after you save each run's output/):
   - NPPC_SWEEP:     vary N_ppc at fixed scaling
+  - NCELLS_SWEEP:   vary N_cells
   - SCALING_SWEEP:  vary scaling at fixed N_ppc
 
 Expected layout for each run directory:
-  <run_dir>/output/scalars/scalars_*.csv
+  <run_dir>/scalars/scalars_*.csv   (or <run_dir>/output/scalars/)
   <run_dir>/conditions.txt          (optional but preferred)
 
 Time between scalar files is always DT = dt * scaling = 0.04 (see initialization.cpp).
@@ -39,38 +40,57 @@ V_DEFAULT = 0.5  # v_drift
 # each beam has n_j = n0/2 → ω_{pe,1}^2 = 0.5 in units where total ω_pe = 1
 OMEGA_PE1_SQ = 0.5
 
-# Optional manual fit window in simulation time. None → auto (seed rise → near peak).
+# Optional manual fit window in simulation time. None → auto (linear flank → near peak).
 # Example: FIT_WINDOW = (10.0, 25.0)
 FIT_WINDOW: Optional[tuple[float, float]] = None
 
-# End auto-fit once ES reaches this fraction of its peak (keeps you out of saturation).
+# Auto-fit window as fractions of peak ES. Start high enough to skip the early
+# transient bump; end before saturation.
+FIT_START_FRAC_OF_PEAK = 1e-2
 FIT_FRAC_OF_PEAK = 0.15
 
 OUT_DIR = "figures"
 OUT_NPPC = os.path.join(OUT_DIR, "error_vs_nppc_twostream.png")
+OUT_NCELLS = os.path.join(OUT_DIR, "error_vs_ncells_twostream.png")
 OUT_SCALING = os.path.join(OUT_DIR, "error_vs_scaling_twostream.png")
 
 # High-resolution reference run (shown as a horizontal line, not a sweep point).
-HIGH_RES_DIR = "figures/hr nppc=128000 ncells=1024"
+HIGH_RES_DIR = "figures/high_res nppc=128000 ncells=1024"
 
 # ---------------------------------------------------------------------------
 # Sweep run directories — fill these in after each PIC run.
 # Each entry is (parameter_value, path_to_run_dir).
+# Layout: <run_dir>/scalars/scalars_*.csv  (or output/scalars/).
+# Folder name figures/nppc={factor} uses N_ppc = 1000 * 2^factor
+# (see initialization.cpp twostream block).
 # ---------------------------------------------------------------------------
-# N_ppc sweep at fixed scaling (=1). Needs output/scalars/ in each dir.
-# (Your figures/nppc* folders currently only kept plots, not scalar CSVs.)
 NPPC_SWEEP: list[tuple[float, str]] = [
-    (8000,  "figures/nppc8000 gif"),
-    (16000, "figures/nppc16000"),
-    (32000, "figures/nppc32000"),
-    (64000, "figures/nppc64000"),
+    (1000,  "figures/nppc=0"),
+    (2000,  "figures/nppc=1"),
+    (4000,  "figures/nppc=2"),
+    (8000,  "figures/nppc=3"),
+    (16000, "figures/nppc=4"),
+    (32000, "figures/nppc=5"),
+    (64000, "figures/nppc=6"),
 ]
 
-# Scaling sweep at fixed N_ppc = 128000. High-res (scaling=16) is NOT listed
+# N_cells sweep (folder name = cell count).
+NCELLS_SWEEP: list[tuple[float, str]] = [
+    (64,   "figures/ncells=64"),
+    (128,  "figures/ncells=128"),
+    (256,  "figures/ncells=256"),
+    (384,  "figures/ncells=384"),
+    (512,  "figures/ncells=512"),
+    (640,  "figures/ncells=640"),
+    (768,  "figures/ncells=768"),
+    (896,  "figures/ncells=896"),
+    (1024, "figures/ncells=1024"),
+]
+
+# Scaling sweep at fixed N_ppc. High-res (scaling=16) is NOT listed
 # here — it is used only as the γ_highres reference line via HIGH_RES_DIR.
 SCALING_SWEEP: list[tuple[float, str]] = [
-    (4, "figures/nppc=128000 ncells=256"),
-    # add more scalings here as you run them, e.g. (1, "..."), (2, "..."), (8, "...")
+    # add scalings as you run them, e.g. (1, "..."), (2, "..."), (4, "..."), (8, "...")
 ]
 
 
@@ -148,11 +168,51 @@ def load_es(scalar_dir: str, dt: float = DT):
     return step * dt, ES
 
 
+def auto_fit_indices(
+    ES: np.ndarray,
+    frac_start: float = FIT_START_FRAC_OF_PEAK,
+    frac_end: float = FIT_FRAC_OF_PEAK,
+) -> tuple[int, int]:
+    """
+    Indices [i0, i1] covering the linear exponential rise into the main peak.
+
+    Uses peak-relative thresholds so early transient bumps (above the seed but
+    still << peak) are skipped. Start = last time ES is below frac_start*peak
+    before the peak; end = first time ES reaches frac_end*peak on that flank.
+    """
+    i_peak = int(np.argmax(ES))
+    es_peak = max(float(ES[i_peak]), 1e-30)
+    # Incomplete / noise-only runs: peak never leaves the seed floor.
+    if es_peak < 50.0 * max(float(ES[0]), 1e-30):
+        raise RuntimeError(
+            "ES never grows far above the seed — cannot auto-pick a linear window "
+            "(run longer, or set FIT_WINDOW manually)."
+        )
+
+    es_start = frac_start * es_peak
+    es_end = frac_end * es_peak
+
+    below = np.where((np.arange(len(ES)) < i_peak) & (ES < es_start))[0]
+    if len(below) > 0:
+        i0 = int(below[-1]) + 1
+    else:
+        i0 = 1
+    i0 = max(1, min(i0, i_peak - 3))
+
+    i1 = i0
+    while i1 < i_peak and ES[i1] < es_end:
+        i1 += 1
+    if i1 <= i0 + 2:
+        i1 = max(i0 + 3, min(i_peak, len(ES) - 1))
+    return i0, i1
+
+
 def fit_gamma_sim(
     t: np.ndarray,
     ES: np.ndarray,
     fit_window: Optional[tuple[float, float]] = FIT_WINDOW,
     frac_of_peak: float = FIT_FRAC_OF_PEAK,
+    frac_start: float = FIT_START_FRAC_OF_PEAK,
 ) -> tuple[float, float, float]:
     """
     Return (gamma_sim, t_fit_start, t_fit_end).
@@ -163,20 +223,7 @@ def fit_gamma_sim(
         t0, t1 = fit_window
         mask = (t >= t0) & (t <= t1) & (ES > 0)
     else:
-        # start once ES has clearly left the seed / noise floor
-        es0 = max(float(ES[0]), 1e-30)
-        i0 = int(np.searchsorted(ES, 3.0 * es0))
-        i0 = max(1, min(i0, len(ES) - 3))
-
-        # stop in the linear phase, before saturation
-        i_peak = int(np.argmax(ES))
-        es_cut = frac_of_peak * float(ES[i_peak])
-        i1 = i0
-        while i1 < i_peak and ES[i1] < es_cut:
-            i1 += 1
-        if i1 <= i0 + 2:
-            i1 = max(i0 + 3, min(i_peak, len(ES) - 1))
-
+        i0, i1 = auto_fit_indices(ES, frac_start=frac_start, frac_end=frac_of_peak)
         mask = (np.arange(len(ES)) >= i0) & (np.arange(len(ES)) <= i1) & (ES > 0)
 
     tf, ESf = t[mask], ES[mask]
@@ -234,22 +281,47 @@ def analyze_sweep(sweep: list[tuple[float, str]], param_name: str) -> list[dict]
     return results
 
 
+def fit_error_power_law(
+    x: np.ndarray,
+    err: np.ndarray,
+) -> Optional[tuple[float, float]]:
+    """
+    Fit |error| ∝ x^slope  via log-log least squares.
+
+    Returns (slope, intercept) for log(err) = slope * log(x) + intercept,
+    or None if fewer than 2 positive points.
+    """
+    mask = (x > 0) & (err > 0) & np.isfinite(x) & np.isfinite(err)
+    if np.count_nonzero(mask) < 2:
+        return None
+    slope, intercept = np.polyfit(np.log(x[mask]), np.log(err[mask]), 1)
+    return float(slope), float(intercept)
+
+
 def plot_error(
     results: list[dict],
     param_name: str,
     xlabel: str,
     out_path: str,
     gamma_highres: Optional[float] = None,
-):
+) -> Optional[float]:
+    """
+    Plot γ and |Δγ| vs the sweep parameter.
+
+    For the absolute-error panel, also fit a power law on log-log axes
+    (|error| ∝ param^slope) and return that slope (theory error).
+    """
     if not results:
         print(f"  no results to plot for {param_name}")
-        return
+        return None
 
     results = sorted(results, key=lambda r: r["param"])
     x = np.array([r["param"] for r in results], dtype=float)
     err = np.array([r["abs_error"] for r in results], dtype=float)
     g_sim = np.array([r["gamma_sim"] for r in results], dtype=float)
     g_th = results[0]["gamma_theory"]
+    # xlabel may be mathtext (e.g. $N_{\mathrm{ppc}}$); strip $ for embedding in fit labels
+    param_tex = xlabel.strip("$") if "$" in xlabel else rf"\mathrm{{{xlabel}}}"
 
     fig, (ax0, ax1) = plt.subplots(2, 1, figsize=(8, 7), sharex=True)
 
@@ -263,29 +335,58 @@ def plot_error(
             + r"  ($N_{\rm ppc}{=}128000$, $N_{\rm cells}{=}1024$)",
         )
     ax0.set_ylabel(r"growth rate $\gamma$")
-    ax0.set_title(f"Two-stream growth rate vs {param_name}")
+    ax0.set_title(rf"Two-stream growth rate vs ${param_tex}$")
     ax0.grid(True, ls="--", alpha=0.5)
     ax0.legend()
 
     ax1.plot(x, err, "s-", color="tab:blue", label=r"$|\gamma_{\rm sim}-\gamma_{\rm theory}|$")
+
+    slope_theory = None
+    fit_th = fit_error_power_law(x, err)
+    if fit_th is not None:
+        slope_theory, intercept_th = fit_th
+        x_fit = np.linspace(x.min(), x.max(), 200)
+        err_fit = np.exp(intercept_th) * x_fit**slope_theory
+        ax1.plot(
+            x_fit, err_fit, ":", color="tab:blue", lw=1.8,
+            label=rf"fit $\propto {param_tex}^{{{slope_theory:.3f}}}$",
+        )
+        print(f"  log-log fit |Δγ|_theory vs {param_name}:  slope = {slope_theory:.4f}")
+
     if gamma_highres is not None and np.isfinite(gamma_highres):
         err_hr = np.abs(g_sim - gamma_highres)
         ax1.plot(x, err_hr, "D--", color="tab:green",
                  label=r"$|\gamma_{\rm sim}-\gamma_{\rm highres}|$")
-        ax1.legend()
+        fit_hr = fit_error_power_law(x, err_hr)
+        if fit_hr is not None:
+            slope_hr, intercept_hr = fit_hr
+            x_fit = np.linspace(x.min(), x.max(), 200)
+            err_fit = np.exp(intercept_hr) * x_fit**slope_hr
+            ax1.plot(
+                x_fit, err_fit, ":", color="tab:green", lw=1.8,
+                label=rf"fit $\propto {param_tex}^{{{slope_hr:.3f}}}$",
+            )
+            print(f"  log-log fit |Δγ|_highres vs {param_name}: slope = {slope_hr:.4f}")
+
+    ax1.legend()
     ax1.set_xlabel(xlabel)
     ax1.set_ylabel("absolute error")
     ax1.set_title("Absolute error (convergence)")
     ax1.grid(True, ls="--", alpha=0.5)
-    if np.all(x > 0) and len(x) >= 2 and (np.max(x) / np.min(x) >= 4):
+    use_log = np.all(x > 0) and len(x) >= 2 and (np.max(x) / np.min(x) >= 4)
+    if use_log:
         ax1.set_xscale("log")
         ax0.set_xscale("log")
+        # log-log makes the power-law fit a straight line
+        if np.any(err > 0):
+            ax1.set_yscale("log")
 
     fig.tight_layout()
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
     fig.savefig(out_path, dpi=140)
     print(f"  saved {out_path}")
     plt.close(fig)
+    return slope_theory
 
 
 def main():
@@ -305,10 +406,10 @@ def main():
         except (FileNotFoundError, RuntimeError) as exc:
             print(f"could not load HIGH_RES_DIR ({HIGH_RES_DIR}): {exc}\n")
 
-    if not NPPC_SWEEP and not SCALING_SWEEP:
+    if not NPPC_SWEEP and not NCELLS_SWEEP and not SCALING_SWEEP:
         print(
             "No sweeps configured.\n"
-            "Edit NPPC_SWEEP / SCALING_SWEEP at the top of this file to point at\n"
+            "Edit NPPC_SWEEP / NCELLS_SWEEP / SCALING_SWEEP at the top of this file to point at\n"
             "run directories that contain output/scalars/ (and preferably conditions.txt).\n"
             "\nQuick single-run check of the current ./output folder:"
         )
@@ -328,7 +429,11 @@ def main():
         print("    (needs scalars_*.csv under each run dir; skips dirs that only have plots)")
         res = analyze_sweep(NPPC_SWEEP, "N_ppc")
         if res:
-            plot_error(res, "N_ppc", r"$N_{\mathrm{ppc}}$", OUT_NPPC, gamma_highres)
+            slope = plot_error(
+                res, "N_ppc", r"$N_{\mathrm{ppc}}$", OUT_NPPC, gamma_highres
+            )
+            if slope is not None:
+                print(f"  → returned slope (theory abs error vs N_ppc) = {slope:.4f}")
         else:
             print(
                 "  → no nppc points loaded. Re-save each run's output/scalars/ into\n"
@@ -336,10 +441,28 @@ def main():
                 f"  → expected plot path once data exists: {OUT_NPPC}"
             )
 
+    if NCELLS_SWEEP:
+        print("--- N_cells sweep ---")
+        print("    (needs scalars_*.csv under each run dir; skips dirs that only have plots)")
+        res = analyze_sweep(NCELLS_SWEEP, "N_cells")
+        if res:
+            slope = plot_error(
+                res, "N_cells", r"$N_{\mathrm{cells}}$", OUT_NCELLS, gamma_highres
+            )
+            if slope is not None:
+                print(f"  → returned slope (theory abs error vs N_cells) = {slope:.4f}")
+        else:
+            print(
+                "  → no ncells points loaded. Update NCELLS_SWEEP paths, then re-run.\n"
+                f"  → expected plot path once data exists: {OUT_NCELLS}"
+            )
+
     if SCALING_SWEEP:
         print("--- scaling sweep (fixed N_ppc) ---")
         res = analyze_sweep(SCALING_SWEEP, "scaling")
-        plot_error(res, "scaling", "scaling", OUT_SCALING, gamma_highres)
+        slope = plot_error(res, "scaling", "scaling", OUT_SCALING, gamma_highres)
+        if slope is not None:
+            print(f"  → returned slope (theory abs error vs scaling) = {slope:.4f}")
 
 
 if __name__ == "__main__":
