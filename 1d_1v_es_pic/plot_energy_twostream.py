@@ -17,6 +17,8 @@ import matplotlib.pyplot as plt
 DT = 0.04
 SCALAR_DIR = "output/scalars"
 OUT_FILE = "figures/energy_vs_time_twostream.png"
+# Match error_analysis_twostream: end auto-fit once ES reaches this fraction of peak.
+FIT_FRAC_OF_PEAK = 0.15
 
 rows = []
 for path in glob.glob(os.path.join(SCALAR_DIR, "scalars_*.csv")):
@@ -39,21 +41,20 @@ ES   = np.array([r[1] for r in rows])
 KE   = np.array([r[2] for r in rows])
 TOT  = KE + ES
 
-# ---- fit linear growth rate: ES ~ exp(2 γ t) while still growing ----
-# Fit between the first point above a few× the seed and the first local max
-# (onset of saturation). Drop points where ES is non-positive.
-i_seed = 0
-while i_seed + 1 < len(ES) and ES[i_seed + 1] > ES[i_seed]:
-    # find start of clear rise: first ES that exceeds 3× initial seed
-    if ES[i_seed] > 3.0 * max(ES[0], 1e-30):
-        break
-    i_seed += 1
-# peak before saturation (global max is fine for cold two-stream)
+# ---- fit linear growth rate: ES ~ exp(2 γ t) (same window as error_analysis) ----
+# Start once ES has left the seed / noise floor; stop at FIT_FRAC_OF_PEAK of
+# the peak so the fit stays in the linear phase (before saturation).
+es0 = max(float(ES[0]), 1e-30)
+i0 = int(np.searchsorted(ES, 3.0 * es0))
+i0 = max(1, min(i0, len(ES) - 3))
+
 i_peak = int(np.argmax(ES))
-i0 = max(1, int(np.searchsorted(ES, 3.0 * max(ES[0], 1e-30))))
-i1 = i_peak
+es_cut = FIT_FRAC_OF_PEAK * float(ES[i_peak])
+i1 = i0
+while i1 < i_peak and ES[i1] < es_cut:
+    i1 += 1
 if i1 <= i0 + 2:
-    i0, i1 = 1, min(len(ES) - 1, max(5, len(ES) // 4))
+    i1 = max(i0 + 3, min(i_peak, len(ES) - 1))
 
 mask = (np.arange(len(ES)) >= i0) & (np.arange(len(ES)) <= i1) & (ES > 0)
 tf, ESf = t[mask], ES[mask]
@@ -61,7 +62,7 @@ if len(tf) >= 3:
     slope, intercept = np.polyfit(tf, np.log(ESf), 1)
     gamma = slope / 2.0          # ES ∝ exp(2 γ t)
 else:
-    slope, gamma = np.nan, np.nan
+    slope, intercept, gamma = np.nan, np.nan, np.nan
 
 # ---- plot ----
 fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(9, 11), sharex=True)

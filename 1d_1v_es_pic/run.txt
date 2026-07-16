@@ -1,5 +1,7 @@
 g++ -I/opt/homebrew/include -I/opt/homebrew/opt/libomp/include -L/opt/homebrew/opt/libomp/lib -lomp -Xpreprocessor -fopenmp main.cpp initialization.cpp grid.cpp particle.cpp -o pic
 ./pic
+python3 plot_energy_twostream.py
+python3 plot_initial_conditions.py
 
 python3 plot_energy_landau.py
 python3 plot_initial_conditions.py
