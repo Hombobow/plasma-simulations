@@ -9,14 +9,17 @@ For each saved run:
   4. gamma_theory from the cold symmetric two-stream formula
   5. abs_error = |gamma_sim - gamma_theory|
 
-Two sweeps (edit the path lists below after you save each run's output/):
+Two sweeps (edit the path lists below after you save each run):
   - NPPC_SWEEP:     vary N_ppc at fixed scaling
   - NCELLS_SWEEP:   vary N_cells
   - SCALING_SWEEP:  vary scaling at fixed N_ppc
 
 Expected layout for each run directory:
-  <run_dir>/scalars/scalars_*.csv   (or <run_dir>/output/scalars/)
+  <run_dir>/scalars/scalars_*.csv
   <run_dir>/conditions.txt          (optional but preferred)
+
+Default single-run check uses output/twostream/.
+Plots always write under figures/.
 
 Time between scalar files is always DT = dt * scaling = 0.04 (see initialization.cpp).
 """
@@ -54,43 +57,45 @@ OUT_NPPC = os.path.join(OUT_DIR, "error_vs_nppc_twostream.png")
 OUT_NCELLS = os.path.join(OUT_DIR, "error_vs_ncells_twostream.png")
 OUT_SCALING = os.path.join(OUT_DIR, "error_vs_scaling_twostream.png")
 
+DEFAULT_RUN_DIR = "output/twostream"
+
 # High-resolution reference run (shown as a horizontal line, not a sweep point).
-HIGH_RES_DIR = "figures/high_res nppc=128000 ncells=1024"
+HIGH_RES_DIR = "output/high_res nppc=128000 ncells=1024"
 
 # ---------------------------------------------------------------------------
 # Sweep run directories — fill these in after each PIC run.
 # Each entry is (parameter_value, path_to_run_dir).
-# Layout: <run_dir>/scalars/scalars_*.csv  (or output/scalars/).
-# Folder name figures/nppc={factor} uses N_ppc = 1000 * 2^factor
+# Layout: <run_dir>/scalars/scalars_*.csv
+# Folder name output/nppc={factor} uses N_ppc = 1000 * 2^factor
 # (see initialization.cpp twostream block).
 # ---------------------------------------------------------------------------
 NPPC_SWEEP: list[tuple[float, str]] = [
-    (1000,  "figures/nppc=0"),
-    (2000,  "figures/nppc=1"),
-    (4000,  "figures/nppc=2"),
-    (8000,  "figures/nppc=3"),
-    (16000, "figures/nppc=4"),
-    (32000, "figures/nppc=5"),
-    (64000, "figures/nppc=6"),
+    (1000,  "output/nppc=0"),
+    (2000,  "output/nppc=1"),
+    (4000,  "output/nppc=2"),
+    (8000,  "output/nppc=3"),
+    (16000, "output/nppc=4"),
+    (32000, "output/nppc=5"),
+    (64000, "output/nppc=6"),
 ]
 
 # N_cells sweep (folder name = cell count).
 NCELLS_SWEEP: list[tuple[float, str]] = [
-    (64,   "figures/ncells=64"),
-    (128,  "figures/ncells=128"),
-    (256,  "figures/ncells=256"),
-    (384,  "figures/ncells=384"),
-    (512,  "figures/ncells=512"),
-    (640,  "figures/ncells=640"),
-    (768,  "figures/ncells=768"),
-    (896,  "figures/ncells=896"),
-    (1024, "figures/ncells=1024"),
+    (64,   "output/ncells=64"),
+    (128,  "output/ncells=128"),
+    (256,  "output/ncells=256"),
+    (384,  "output/ncells=384"),
+    (512,  "output/ncells=512"),
+    (640,  "output/ncells=640"),
+    (768,  "output/ncells=768"),
+    (896,  "output/ncells=896"),
+    (1024, "output/ncells=1024"),
 ]
 
 # Scaling sweep at fixed N_ppc. High-res (scaling=16) is NOT listed
 # here — it is used only as the γ_highres reference line via HIGH_RES_DIR.
 SCALING_SWEEP: list[tuple[float, str]] = [
-    # add scalings as you run them, e.g. (1, "..."), (2, "..."), (4, "..."), (8, "...")
+    # add scalings as you run them, e.g. (1, "output/scaling=1"), ...
 ]
 
 
@@ -135,17 +140,17 @@ def parse_conditions(path: str) -> dict:
 def find_scalar_dir(run_dir: str) -> str:
     """Locate scalars_*.csv under a run directory (several naming layouts)."""
     candidates = [
-        os.path.join(run_dir, "output", "scalars"),
-        os.path.join(run_dir, "output_mid_res", "scalars"),
         os.path.join(run_dir, "scalars"),
+        os.path.join(run_dir, "output", "scalars"),
+        run_dir if run_dir.endswith("scalars") else "",
         run_dir,
     ]
     for c in candidates:
-        if glob.glob(os.path.join(c, "scalars_*.csv")):
+        if c and glob.glob(os.path.join(c, "scalars_*.csv")):
             return c
     raise FileNotFoundError(
         f"No scalars_*.csv under {run_dir!r}. "
-        "Save the run's output/ folder into the run directory first."
+        "Expected <run_dir>/scalars/ (e.g. output/twostream/scalars/)."
     )
 
 
@@ -410,23 +415,23 @@ def main():
         print(
             "No sweeps configured.\n"
             "Edit NPPC_SWEEP / NCELLS_SWEEP / SCALING_SWEEP at the top of this file to point at\n"
-            "run directories that contain output/scalars/ (and preferably conditions.txt).\n"
-            "\nQuick single-run check of the current ./output folder:"
+            "run directories that contain scalars/ (and preferably conditions.txt).\n"
+            f"\nQuick single-run check of {DEFAULT_RUN_DIR}:"
         )
-        if glob.glob("output/scalars/scalars_*.csv"):
-            r = analyze_run(".")
+        if glob.glob(os.path.join(DEFAULT_RUN_DIR, "scalars", "scalars_*.csv")):
+            r = analyze_run(DEFAULT_RUN_DIR)
             print(
                 f"  γ_sim={r['gamma_sim']:.5f}  γ_th={r['gamma_theory']:.5f}  "
                 f"|Δγ|={r['abs_error']:.5f}  "
                 f"fit t∈[{r['fit_window'][0]:.2f},{r['fit_window'][1]:.2f}]"
             )
         else:
-            print("  (no ./output/scalars found)")
+            print(f"  (no {DEFAULT_RUN_DIR}/scalars found)")
         return
 
     if NPPC_SWEEP:
         print("--- N_ppc sweep (fixed scaling) ---")
-        print("    (needs scalars_*.csv under each run dir; skips dirs that only have plots)")
+        print("    (needs scalars_*.csv under each run dir; skips missing dirs)")
         res = analyze_sweep(NPPC_SWEEP, "N_ppc")
         if res:
             slope = plot_error(
@@ -436,14 +441,14 @@ def main():
                 print(f"  → returned slope (theory abs error vs N_ppc) = {slope:.4f}")
         else:
             print(
-                "  → no nppc points loaded. Re-save each run's output/scalars/ into\n"
-                "    those folders (or update NPPC_SWEEP paths), then re-run.\n"
+                "  → no nppc points loaded. Save each run under output/nppc=* "
+                "(or update NPPC_SWEEP), then re-run.\n"
                 f"  → expected plot path once data exists: {OUT_NPPC}"
             )
 
     if NCELLS_SWEEP:
         print("--- N_cells sweep ---")
-        print("    (needs scalars_*.csv under each run dir; skips dirs that only have plots)")
+        print("    (needs scalars_*.csv under each run dir; skips missing dirs)")
         res = analyze_sweep(NCELLS_SWEEP, "N_cells")
         if res:
             slope = plot_error(
@@ -453,7 +458,8 @@ def main():
                 print(f"  → returned slope (theory abs error vs N_cells) = {slope:.4f}")
         else:
             print(
-                "  → no ncells points loaded. Update NCELLS_SWEEP paths, then re-run.\n"
+                "  → no ncells points loaded. Save each run under output/ncells=* "
+                "(or update NCELLS_SWEEP), then re-run.\n"
                 f"  → expected plot path once data exists: {OUT_NCELLS}"
             )
 
