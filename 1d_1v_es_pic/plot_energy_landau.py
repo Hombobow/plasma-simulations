@@ -3,7 +3,9 @@
 Plot kinetic and electrostatic energy vs time from the PIC scalar output,
 and fit the Landau damping rate from the electrostatic-energy decay.
 
-Reads:  output/scalars/scalars_<step>.csv   (each: header "ES_energy,KE" + one row)
+Reads:  output/landaudamping/scalars/scalars_<step>.csv
+        (each: header "ES_energy,KE" + one row)
+Writes: figures/energy_vs_time_landau.png
 Assumes the filename index is the timestep number, so time = step * DT.
 Run from the same directory that contains the `output/` folder.
 """
@@ -25,10 +27,11 @@ for _bk in ("QtAgg", "Qt5Agg", "TkAgg"):
 
 DT = 0.04          # time between saved snapshots (= dt * output stride). Both scalars and particles
                    # are written with the same output index, so this DT works for both.
-GAMMA =2 *  0.015      # 0.041 for k = 1/3; 0.15 for k = 1/2
-                   # (ES ~ exp(-2*gamma_field*t), so use 2*|gamma_field|, e.g. ~1.7 for k=1)
-SCALAR_DIR = "output/scalars"
-PART_DIR   = "output/particles"
+GAMMA = 2 * 0.15   # field damping rate γ: ~0.041 for k=1/3; ~0.15 for k=1/2 (wavelength=2)
+                   # (ES ~ exp(-2*gamma_field*t), so plot uses 2*|gamma_field|)
+SCALAR_DIR = "output/landaudamping/scalars"
+PART_DIR   = "output/landaudamping/particles"
+OUT_FILE   = "figures/energy_vs_time_landau.png"
 
 # ---- load all scalar files, sorted by timestep ----
 rows = []
@@ -107,9 +110,10 @@ ax3.grid(True, ls="--", alpha=0.5)
 ax3.legend(loc="best")
 
 fig.tight_layout()
-fig.savefig("figures/energy_vs_time.png", dpi=130)
+os.makedirs(os.path.dirname(OUT_FILE), exist_ok=True)
+fig.savefig(OUT_FILE, dpi=130)
 print(f"measured Landau damping rate  gamma = {gamma:.4f}")
-print("saved energy_vs_time.png")
+print(f"saved {OUT_FILE}")
 
 
 
@@ -144,7 +148,8 @@ else:
         return sc, titlep
 
     anim = FuncAnimation(figp, _update, frames=len(frames), blit=False)
-    anim.save("phase_space.gif", writer=PillowWriter(fps=12))
-    print(f"saved phase_space.gif  ({len(frames)} frames)")
+    os.makedirs("figures", exist_ok=True)
+    anim.save("figures/phase_space.gif", writer=PillowWriter(fps=12))
+    print(f"saved figures/phase_space.gif  ({len(frames)} frames)")
 
 """

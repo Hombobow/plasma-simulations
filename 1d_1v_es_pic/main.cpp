@@ -6,7 +6,6 @@ using namespace std;
 
 int main(){
     initialize();
-    // output_data(0);
 
     auto t_start = chrono::high_resolution_clock::now();
     run_loop();

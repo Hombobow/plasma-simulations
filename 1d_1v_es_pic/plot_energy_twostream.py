@@ -1,21 +1,28 @@
 #!/usr/bin/env python3
 """
 Plot kinetic / electrostatic / total energy vs time for the two-stream run,
-and estimate the linear growth rate from the early ES exponential rise.
+fit the measured linear growth rate, and overlay the cold-beam theoretical γ.
 
 Usage:
-  python3 plot_energy_twostream.py                  # ./output
-  python3 plot_energy_twostream.py figures/ncells=64
-  for d in figures/ncells=*; do python3 plot_energy_twostream.py "$d"; done
+  python3 plot_energy_twostream.py
+  python3 plot_energy_twostream.py output/twostream
+  python3 plot_energy_twostream.py output/twostream --k 0.5 --v-drift 0.5
 
 Reads scalars_*.csv from <run_dir>/scalars/ (or <run_dir>/output/scalars/).
-Assumes filename index k corresponds to time t = k * DT.
+Always writes under figures/.
+Assumes filename index corresponds to time t = index * DT.
+
+Theory (equal cold beams, PDF §6.3.2): streams at ±V with ω_pe,1² each,
+  γ = [√(4 k² V² ω_pe,1² + ω_pe,1⁴) − (k² V² + ω_pe,1²)]^{1/2}
+  unstable when k V < √2 ω_pe,1.
+In normalized units with total n0 = 1 → ω_pe² = 1, each stream has ω_pe,1² = 1/2.
+ES energy grows as exp(2 γ t).
 """
 
+import argparse
 import glob
 import os
 import re
-import sys
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -23,11 +30,28 @@ import matplotlib.pyplot as plt
 # Match initialization.cpp: dt = 0.04 / scaling, output every `scaling` steps.
 # Output file index advances by 1 each save → Δt between files = dt * scaling = 0.04.
 DT = 0.04
-DEFAULT_RUN_DIR = "output"
+DEFAULT_RUN_DIR = "output/twostream"
 DEFAULT_OUT_FILE = "figures/energy_vs_time_twostream.png"
 # Auto-fit window as fractions of peak ES (skip early transient bump).
 FIT_START_FRAC_OF_PEAK = 1e-2
 FIT_FRAC_OF_PEAK = 0.15
+
+# --- theoretical growth rate: tune to match initialization.cpp ---
+# wavelength = 2 (units of 2π) → k = 1/wavelength = 0.5; v_drift = 0.5
+K = 1/2
+V_DRIFT = 0.8
+# Each stream has n = n0/2 → ω_pe,1² = 1/2 when total ω_pe² = 1
+OMEGA_PE1_SQ = 0.5
+
+
+def theoretical_growth_rate(k: float, V: float, omega_pe1_sq: float = OMEGA_PE1_SQ) -> float:
+    """Cold equal-beam two-stream growth rate γ (PDF Eq. 6.2 / §6.3.2)."""
+    kv2 = (k * V) ** 2
+    w2 = omega_pe1_sq
+    inside = np.sqrt(4.0 * kv2 * w2 + w2 * w2) - (kv2 + w2)
+    if inside <= 0.0:
+        return 0.0  # stable (k V >= √2 ω_pe,1)
+    return float(np.sqrt(inside))
 
 
 def find_scalar_dir(run_dir: str) -> str:
@@ -35,7 +59,7 @@ def find_scalar_dir(run_dir: str) -> str:
         os.path.join(run_dir, "output", "scalars"),
         os.path.join(run_dir, "scalars"),
         run_dir if run_dir.endswith("scalars") else "",
-        "output/scalars" if run_dir in (".", "output") else "",
+        "output/twostream/scalars" if run_dir in (".", "output") else "",
     ]
     for c in candidates:
         if c and glob.glob(os.path.join(c, "scalars_*.csv")):
@@ -46,15 +70,56 @@ def find_scalar_dir(run_dir: str) -> str:
     )
 
 
-def main():
-    run_dir = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_RUN_DIR
-    scalar_dir = find_scalar_dir(run_dir)
+def out_path_for(run_dir: str) -> str:
+    """Always save under figures/, naming by run folder when not the default."""
+    name = os.path.basename(os.path.normpath(run_dir))
+    if run_dir in (".", "output", DEFAULT_RUN_DIR) or name in ("twostream", "scalars"):
+        return DEFAULT_OUT_FILE
+    return os.path.join("figures", f"energy_vs_time_{name}.png")
 
-    # Save into the run folder when analyzing a saved run; else default path.
-    if run_dir in (".", "output", DEFAULT_RUN_DIR):
-        out_file = DEFAULT_OUT_FILE
-    else:
-        out_file = os.path.join(run_dir, "energy_vs_time_twostream.png")
+
+def parse_args():
+    p = argparse.ArgumentParser(
+        description="Plot two-stream energies and compare measured vs theoretical γ."
+    )
+    p.add_argument(
+        "run_dir",
+        nargs="?",
+        default=DEFAULT_RUN_DIR,
+        help=f"run directory (default: {DEFAULT_RUN_DIR})",
+    )
+    p.add_argument(
+        "--k",
+        type=float,
+        default=K,
+        help=f"wavenumber k (default: {K}, matches wavelength=2 → k=0.5)",
+    )
+    p.add_argument(
+        "--v-drift",
+        type=float,
+        default=V_DRIFT,
+        dest="v_drift",
+        help=f"beam drift speed V (default: {V_DRIFT})",
+    )
+    p.add_argument(
+        "--omega-pe1-sq",
+        type=float,
+        default=OMEGA_PE1_SQ,
+        dest="omega_pe1_sq",
+        help=f"ω_pe,1² per stream (default: {OMEGA_PE1_SQ} for n1=n2=n0/2)",
+    )
+    return p.parse_args()
+
+
+def main():
+    args = parse_args()
+    run_dir = args.run_dir
+    k = args.k
+    V = args.v_drift
+    omega_pe1_sq = args.omega_pe1_sq
+
+    scalar_dir = find_scalar_dir(run_dir)
+    out_file = out_path_for(run_dir)
 
     rows = []
     for path in glob.glob(os.path.join(scalar_dir, "scalars_*.csv")):
@@ -76,6 +141,11 @@ def main():
     ES = np.array([r[1] for r in rows])
     KE = np.array([r[2] for r in rows])
     TOT = KE + ES
+
+    gamma_th = theoretical_growth_rate(k, V, omega_pe1_sq)
+    omega_pe1 = np.sqrt(omega_pe1_sq)
+    kv = k * V
+    unstable = kv < np.sqrt(2.0) * omega_pe1
 
     # ---- fit linear growth rate: ES ~ exp(2 γ t) ----
     # Peak-relative window: start after early bump, end before saturation.
@@ -124,6 +194,25 @@ def main():
         t_fit = np.linspace(tf[0], tf[-1], 200)
         ax2.semilogy(t_fit, np.exp(intercept + slope * t_fit), "k--", lw=2,
                      label=fr"fit  $ES \propto e^{{2\gamma t}}$,  $\gamma \approx {gamma:.4f}$")
+
+    # Theoretical ES ~ exp(2 γ_th t), anchored in the linear window (or at t=0).
+    if gamma_th > 0.0:
+        if len(tf) >= 1:
+            t0, E0 = float(tf[0]), float(ESf[0])
+            t_end = float(tf[-1])
+        else:
+            t0, E0 = float(t[0]), float(max(ES[0], 1e-30))
+            t_end = float(t[min(len(t) - 1, max(1, int(0.3 * len(t))))])
+        t_th = np.linspace(t0, t_end, 200)
+        ax2.semilogy(
+            t_th,
+            E0 * np.exp(2.0 * gamma_th * (t_th - t0)),
+            color="tab:green",
+            ls=":",
+            lw=2.5,
+            label=fr"theory  $\gamma = {gamma_th:.4f}$  ($k={k:g}$, $V={V:g}$)",
+        )
+
     ax2.set_ylabel("Electrostatic energy (log)")
     ax2.set_title("Electrostatic energy vs time  (two-stream)")
     ax2.grid(True, which="both", ls="--", alpha=0.4)
@@ -145,10 +234,17 @@ def main():
 
     print(f"run: {run_dir}")
     print(f"t=0:  ES = {ES[0]:.6g},  KE = {KE[0]:.6g},  total = {TOT[0]:.6g}")
+    print(
+        f"theory:  k={k:g},  V={V:g},  ω_pe,1²={omega_pe1_sq:g}  →  "
+        f"γ_theory = {gamma_th:.4f}  "
+        f"({'unstable' if unstable else 'STABLE'} since kV={kv:.4f} "
+        f"{'<' if unstable else '>='} √2 ω_pe,1={np.sqrt(2)*omega_pe1:.4f})"
+    )
     if np.isfinite(gamma):
         print(
-            f"measured two-stream growth rate  gamma ≈ {gamma:.4f}  "
-            f"(fit window t∈[{tf[0]:.2f},{tf[-1]:.2f}])"
+            f"measured: γ ≈ {gamma:.4f}  "
+            f"(fit window t∈[{tf[0]:.2f},{tf[-1]:.2f}])  "
+            f"  |γ − γ_theory| = {abs(gamma - gamma_th):.4f}"
         )
     print(f"saved {out_file}")
 

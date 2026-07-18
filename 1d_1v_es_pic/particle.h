@@ -3,30 +3,28 @@
 
 // header file for particle class
 
-class Particle{
-    private: 
+class Particle {
+public:
+    double x;
+    double vx; 
+    double w;
 
-        double m; 
-        double q; 
+    // constructor
+    Particle(double x = 0.0, double vx = 0.0, double w = 1.0, double m = 1.0, double q = -1.0);
 
-        
-    public: 
-        double x; 
-        double vx; 
-        double w; 
-        // constructor
-        Particle(double x_init = 0.0, double vx_init = 0.0 , double m = 1.0, double q = -1.0 , double w = 1.0);
+    double get_x();
+    double get_vx();
 
-        double get_x();
-        double get_vx(); 
+    double get_m();
+    double get_q();
 
-        double get_m(); 
-        double get_q(); 
-        
-        void update_x(double dt, double domain_L); 
-        void update_vx(double dt, double F); 
+    void update_x(double dt, double domain_L);
+    void update_vx(double dt, double F);
 
+private:
+    double m;
+    double q;
+    
 };
-
 
 #endif

@@ -11,12 +11,6 @@
 #include <cstdlib>
 #include <omp.h>
 
-static void clear_output_dirs()
-{
-    std::system("rm -rf output/particles output/fields output/scalars");
-    std::system("mkdir -p output/particles output/fields output/scalars");
-}
-
 using namespace std;
 int scaling = 1;
 int n_steps;
@@ -29,22 +23,24 @@ double dt;
 double dx;
 double T;
 double w; // macroparticle weight
-std::vector<Particle> electrons;
-GridData datagrid;
-std::string problem;
 
-void initialize()
-{
+vector<Particle> electrons;
+GridData datagrid;
+string problem;
+string output_dir;
+
+void initialize() {
     double wavelength = 2.0; // in units of 2*pi; check: 1, 2, 3
     double k = 1.0 / wavelength;
-    problem = "twostream";                             // "landaudamping" or "twostream"
-    L = wavelength * 2 * pi;                           // must be an integer multiple of 2*pi/k
-    n_cells = 32 * scaling * (int)round(L / (2 * pi)); // scale cells with box so dx (resolution) stays fixed as you change L
+    problem = "twostream";                              // "landaudamping" or "twostream"
+    output_dir = "output/" + problem;                   // "output/landaudamping or output/twostream"
+    L = wavelength * 2 * pi;                            // must be an integer multiple of 2*pi/k
+    n_cells = 32 * scaling * (int)round(L / (2 * pi));  // scale cells with box so dx (resolution) stays fixed as you change L
     n_nodes = n_cells + 1;
-    T = 60;
+    T = 30;
     dt = 0.04 / scaling;
     dx = L / n_cells;
-    n_steps = static_cast<int>(std::round(T / dt));
+    n_steps = static_cast<int>(round(T / dt));
 
     vector<double> n_e_init(n_cells);
     vector<double> n_i_init(n_cells);
@@ -55,7 +51,7 @@ void initialize()
 
     if (problem == "landaudamping")
     {
-        N_ppc = 5000;
+        N_ppc = 10000;
 
         // initialize grid data
         double delta_n = 0.05;
@@ -83,8 +79,8 @@ void initialize()
         electrons.resize(n_particles);
 
         random_device rd;
-        std::mt19937 gen(rd());
-        std::uniform_real_distribution<double> dis(0.0, 1.0);
+        mt19937 gen(rd());
+        uniform_real_distribution<double> dis(0.0, 1.0);
 
         for (int i = 0; i < n_particles; i++)
         {
@@ -105,7 +101,7 @@ void initialize()
                 }
             }
         }
-        std::cout << "=== landaudamping run ===\n"
+        cout << "=== landaudamping run ===\n"
                   << "  problem      = " << problem << "\n"
                   << "  scaling      = " << scaling << "\n"
                   << "  wavelength   = " << wavelength << " (units of 2*pi)\n"
@@ -125,13 +121,12 @@ void initialize()
                   << "  delta_n      = " << delta_n << "\n"
                   << "  ni           = " << ni << endl;
     }
-
     else if (problem == "twostream")
     { // if problem == "twostream"
-        double factor = 1;
+        double factor = 4;
         N_ppc = 1000 * pow(2, factor);
         double v_th = 0.00;   // thermal velocity (normalized)
-        double v_drift = 0.5; // drift velocity (must be > v_th for instability)
+        double v_drift = 0.8; // drift velocity (must be > v_th for instability)
 
         // initialize grid data
         double delta_n = 0.001;
@@ -191,7 +186,7 @@ void initialize()
             }
         }
         n_particles = static_cast<int>(electrons.size());
-        std::cout << "=== twostream run ===\n"
+        cout << "=== twostream run ===\n"
                   << "  problem      = " << problem << "\n"
                   << "  scaling      = " << scaling << "\n"
                   << "  wavelength   = " << wavelength << " (units of 2*pi)\n"
@@ -213,102 +208,34 @@ void initialize()
                   << "  v_th         = " << v_th << "\n"
                   << "  v_drift      = " << v_drift << endl;
     }
-    else
-    {
-    }
 }
 
-int gather_density()
-{
+int output_data(int n_output) {
+    // if (n_output == 0)
+    
+    // {
+    //     std::ostringstream name;
+    //     name << output_dir << "/particles/particle_" << n_output << ".csv";
+    //     std::ofstream f(name.str());
+    //     f << std::setprecision(9);
+    //     f << "x,vx\n";
+    //     for (int i = 0; i < n_particles; i++)
+    //     {
+    //         f << electrons[i].get_x() << "," << electrons[i].get_vx() + electrons[i].get_q() / electrons[i].get_m() * (dt / 2) * get_E(electrons[i].get_x()) << "\n";
+    //     }
+    // }
 
-    for (int i = 0; i < n_cells; i++)
-        datagrid.n_e[i] = 0;
-
-#pragma omp parallel
     {
-        vector<double> local_n_e(n_cells, 0.0); // private per thread
-#pragma omp for nowait
-        for (int i = 0; i < n_particles; i++)
-        {
-            double part_x = electrons[i].get_x();
-            int ind_minus, ind_plus;
-            double f;
-            if (part_x < dx / 2)
-            {
-                ind_minus = n_cells - 1;
-                ind_plus = 0;
-                f = (datagrid.x_cells[ind_plus] - part_x) / dx; // fraction deposited to minus cell
-            }
-            else if (part_x > L - dx / 2)
-            {
-                ind_minus = n_cells - 1;
-                ind_plus = 0;
-                f = (datagrid.x_cells[ind_plus] - part_x + L) / dx; // fraction deposited to minus cell
-            }
-            else
-            {
-                ind_minus = (part_x - dx / 2) / dx;
-                ind_plus = ind_minus + 1;
-                f = (datagrid.x_cells[ind_plus] - part_x) / dx; // fraction deposited to minus cell
-            }
-            // w = n0*dx/N_ppc is a column density (particles / macroparticle);
-            // divide by dx so the deposited cell value is a number density.
-            local_n_e[ind_minus] += (w / dx) * f;
-            local_n_e[ind_plus] += (w / dx) * (1 - f);
-        }
-#pragma omp critical
+        std::ostringstream name;
+        name << output_dir << "/fields/fields_" << n_output << ".csv";
+        std::ofstream f(name.str());
+        f << std::setprecision(9);
+        f << "x,n,E,phi\n";
         for (int i = 0; i < n_cells; i++)
         {
-            datagrid.n_e[i] += local_n_e[i];
-        }
-    }
-
-    return 1;
-}
-
-int push_electrons()
-{
-#pragma omp parallel for
-    for (int i = 0; i < n_particles; i++)
-    {
-        double F = electrons[i].get_q() / electrons[i].get_m() * get_E(electrons[i].get_x());
-        electrons[i].update_vx(dt, F);
-        electrons[i].update_x(dt, L);
-    }
-    return 1;
-}
-int output_data(int n_output)
-{
-
-    {
-        if (n_output == 0)
-        {
-            std::ostringstream name;
-            name << "output/particles/particle_" << n_output << ".csv";
-            std::ofstream f(name.str());
-            f << std::setprecision(9);
-            f << "x,vx\n";
-            for (int i = 0; i < n_particles; i++)
-            {
-                f << electrons[i].get_x() << "," << electrons[i].get_vx() + electrons[i].get_q() / electrons[i].get_m() * (dt / 2) * get_E(electrons[i].get_x()) << "\n";
-            }
-        }
-    }
-
-    {
-        if (n_output == 0)
-        {
-            std::ostringstream name;
-            name << "output/fields/fields_" << n_output << ".csv";
-            std::ofstream f(name.str());
-            f << std::setprecision(9);
-            f << "x,n,E,phi\n";
-            for (int i = 0; i < n_cells; i++)
-            {
-                double E_cell = 0.5 * (datagrid.E[i] + datagrid.E[i + 1]);
-                f << datagrid.x_cells[i] << "," << datagrid.n_e[i] << ","
-                  << E_cell << "," << datagrid.phi[i] << "\n";
-            }
+            double E_cell = 0.5 * (datagrid.E[i] + datagrid.E[i + 1]);
+            f << datagrid.x_cells[i] << "," << datagrid.n_e[i] << ","
+                << E_cell << "," << datagrid.phi[i] << "\n";
         }
     }
 
@@ -323,7 +250,7 @@ int output_data(int n_output)
             KE += 0.5 * w * electrons[i].get_m() * v * v;
         }
         std::ostringstream name;
-        name << "output/scalars/scalars_" << n_output << ".csv";
+        name << output_dir << "/scalars/scalars_" << n_output << ".csv";
         std::ofstream f(name.str());
         f << std::setprecision(9);
         f << "ES_energy,KE\n";
@@ -332,6 +259,13 @@ int output_data(int n_output)
 
     return 1;
 }
+
+static void clear_output_dirs()
+{
+    system(("rm -rf " + output_dir + "/particles " + output_dir + "/fields " + output_dir + "/scalars").c_str());
+    system(("mkdir -p " + output_dir + "/particles " + output_dir + "/fields " + output_dir + "/scalars").c_str());
+}
+
 int run_loop()
 {
     int nt;
@@ -345,7 +279,7 @@ int run_loop()
         int percent = (nt + 1) * 100 / n_steps;
         if (percent != last_percent)
         {
-            std::cout << "\rProgress: " << std::setw(3) << percent << "%" << std::flush;
+            cout << "\rProgress: " << setw(3) << percent << "%" << flush;
             last_percent = percent;
         }
         if (nt % scaling == 0)
@@ -357,15 +291,69 @@ int run_loop()
         datagrid.poisson_solve();
         datagrid.update_E();
     }
-    std::cout << "\n";
+    cout << "\n";
 
     return 1;
 }
 
-double get_E(double part_x)
-{
-    int ind_minus = part_x / dx;
-    int ind_plus = ind_minus + 1;
+int gather_density() {
+    for (int i = 0; i < n_cells; i++) {
+        datagrid.n_e[i] = 0.0;
+    }
 
-    return datagrid.E[ind_minus] * (datagrid.x_nodes[ind_plus] - part_x) / dx + datagrid.E[ind_plus] * (part_x - datagrid.x_nodes[ind_minus]) / dx;
+#pragma omp parallel
+    {
+        vector<double> local_n_e(n_cells, 0.0); // private per thread
+
+#pragma omp for nowait
+        for (int i = 0; i < n_particles; i++) {
+            double part_x = electrons[i].get_x();
+            int ind_minus, ind_plus;
+            double dist; // distance to the right (plus) cell 
+            double f; // weighting fraction deposited to the left (minus) cell in linear (CIC) interpolation
+
+            // new logic with modulo
+            // in the case that x < dx / 2: x_shift < 0 and we get x_shift gets moved to the right end
+            // in the case that x > L - dx / 2: dist gets an extra L
+            double x_shift = part_x - dx / 2.0;
+            if (x_shift < 0.0) x_shift += L;
+
+            ind_minus = static_cast<int>(x_shift / dx); // 0 .. n_cells-1
+            ind_plus = (ind_minus + 1) % n_cells;
+
+            dist = datagrid.x_cells[ind_plus] - part_x;
+            if (dist < 0.0) dist += L; // periodic wrap
+
+            f = dist/dx;
+
+            // w = n0*dx/N_ppc is a column density (particles / macroparticle);
+            // divide by dx so the deposited cell value is a number density.
+            local_n_e[ind_minus] += (w / dx) * f;
+            local_n_e[ind_plus] += (w / dx) * (1 - f);
+        }
+#pragma omp critical
+        for (int i = 0; i < n_cells; i++)
+        {
+            datagrid.n_e[i] += local_n_e[i];
+        }
+    }
+
+    return 1;       
+}
+
+int push_electrons() {
+#pragma omp parallel for
+    for (int i = 0; i < n_particles; i++) {
+        double F = electrons[i].get_q() / electrons[i].get_m() * get_E(electrons[i].get_x());
+        electrons[i].update_vx(dt, F);
+        electrons[i].update_x(dt, L);
+    }
+    return 1;
+}
+
+double get_E(double part_x) {
+    int ind_minus = static_cast<int>(part_x / dx);
+    int ind_plus = ind_minus + 1;
+    return datagrid.E[ind_minus] * (datagrid.x_nodes[ind_plus] - part_x) / dx 
+        + datagrid.E[ind_plus] * (part_x - datagrid.x_nodes[ind_minus]) / dx;
 }
