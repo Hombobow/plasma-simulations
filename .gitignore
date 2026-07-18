@@ -1,6 +1,46 @@
-/1d_1v_es_pic/figures/
+# --- Project-specific ---
+1d_1v_es_pic/figures/
 1d_1v_es_pic/output/
 1d_1v_es_pic/pic
 1d_1v_es_pic/__pycache__/
+
+# --- Python ---
 __pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+.ipynb_checkpoints/
+.venv/
+venv/
+env/
+*.egg
+
+# --- C++ build artifacts ---
+*.o
+*.obj
+*.out
+*.exe
+*.a
+*.so
+*.dylib
+build/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+Makefile
+*.dSYM/
+
+# --- Editors / IDEs ---
+.vscode/
+.idea/
+*.swp
+*~
+
+# --- OS ---
 .DS_Store
+Thumbs.db
+
+# --- Logs / misc ---
+*.log
+*.tmp
