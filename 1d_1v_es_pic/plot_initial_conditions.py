@@ -23,7 +23,7 @@ import matplotlib.pyplot as plt
 DEFAULT_RUN_DIR = "output/twostream"
 DEFAULT_OUT     = "figures/initial_phase_space.png"
 V_DRIFT         = 0.5    # expected beam centers for twostream (match initialization.cpp)
-DELTA_N         = 0.001  # density seed amplitude (match initialization.cpp)
+DELTA_N         = 0.05  # density seed amplitude (match initialization.cpp)
 WAVELENGTH      = 2.0    # in units of 2π → k = 1/WAVELENGTH (match initialization.cpp)
 
 

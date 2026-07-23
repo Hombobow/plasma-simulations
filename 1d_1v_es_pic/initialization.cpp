@@ -32,7 +32,7 @@ string output_dir;
 void initialize() {
     double wavelength = 2.0; // in units of 2*pi; check: 1, 2, 3
     double k = 1.0 / wavelength;
-    problem = "twostream";                              // "landaudamping" or "twostream"
+    problem = "landaudamping";                              // "landaudamping" or "twostream"
     output_dir = "output/" + problem;                   // "output/landaudamping or output/twostream"
     L = wavelength * 2 * pi;                            // must be an integer multiple of 2*pi/k
     n_cells = 32 * scaling * (int)round(L / (2 * pi));  // scale cells with box so dx (resolution) stays fixed as you change L
@@ -75,32 +75,31 @@ void initialize() {
 
         // 1D macroparticle weight: physical particles per macro = n0*dx / N_ppc
         w = ni * dx / N_ppc;
-        n_particles = N_ppc * n_cells;
-        electrons.resize(n_particles);
+        // density pert. can put more than N_ppc in a cell — grow with push_back, then set n_particles
+        electrons.clear();
+        electrons.reserve(static_cast<size_t>(N_ppc * n_cells * (1.0 + delta_n) + n_cells));
 
         random_device rd;
         mt19937 gen(rd());
         uniform_real_distribution<double> dis(0.0, 1.0);
 
-        for (int i = 0; i < n_particles; i++)
+        for (int i = 0; i < n_cells; i++)
         {
-            while (true)
-            {
-                double R1 = dis(gen);
-                double R2 = dis(gen);
-                if (R2 * 1.3 < 1.0 + delta_n * sin(k * L * R1))
-                {
-                    electrons[i].x = L * R1;
-                    double R3 = dis(gen);
-                    double R4 = dis(gen);
+            int num_electrons = static_cast<int>(std::round(
+                N_ppc * (1.0 + delta_n * sin(k * datagrid.x_cells[i]))));
 
-                    electrons[i].vx = sqrt(-2 * log(R3)) * cos(2 * pi * R4) - electrons[i].get_q() / electrons[i].get_m() * dt / 2 * get_E(L * R1);
-                    // note 1: the PDF said 1, I used 2 because that's what the Box-Muller transform is online
-                    // note 2: vx needs to be initialized @ t = -dt/2
-                    break;
-                }
+            for (int j = 0; j < num_electrons; j++) {
+                double R1 = dis(gen);
+                double R2 = std::max(dis(gen), 1e-300); // avoid log(0)
+                double R3 = dis(gen);
+                Particle p;
+
+                p.x = datagrid.x_nodes[i] + R1 * dx;
+                p.vx = sqrt(-2.0 * log(R2)) * cos(2.0 * pi * R3);
+                electrons.push_back(p);
             }
         }
+        n_particles = static_cast<int>(electrons.size());
         cout << "=== landaudamping run ===\n"
                   << "  problem      = " << problem << "\n"
                   << "  scaling      = " << scaling << "\n"
@@ -169,7 +168,7 @@ void initialize() {
                 double R2 = std::max(dis(gen), 1e-300); // avoid log(0)
                 double R3 = dis(gen);
                 Particle p;
-                p.x = datagrid.x_nodes[i] + datagrid.dx * R1;
+                p.x = datagrid.x_nodes[i] + dx * R1;
                 p.vx = -v_drift + v_th * sqrt(-2.0 * log(R2)) * cos(2.0 * pi * R3) - p.get_q() / p.get_m() * dt / 2.0 * get_E(p.x);
                 electrons.push_back(p);
             }
@@ -210,34 +209,34 @@ void initialize() {
     }
 }
 
-int output_data(int n_output) {
-    // if (n_output == 0)
-    
+int output_data(int n_output) {    
+    if (n_output == 0) {
+        {
+            std::ostringstream name;
+            name << output_dir << "/particles/particle_" << n_output << ".csv";
+            std::ofstream f(name.str());
+            f << std::setprecision(9);
+            f << "x,vx\n";
+            for (int i = 0; i < n_particles; i++)
+            {
+                f << electrons[i].get_x() << "," << electrons[i].get_vx() + electrons[i].get_q() / electrons[i].get_m() * (dt / 2) * get_E(electrons[i].get_x()) << "\n";
+            }
+        }
+    } 
+
     // {
     //     std::ostringstream name;
-    //     name << output_dir << "/particles/particle_" << n_output << ".csv";
+    //     name << output_dir << "/fields/fields_" << n_output << ".csv";
     //     std::ofstream f(name.str());
     //     f << std::setprecision(9);
-    //     f << "x,vx\n";
-    //     for (int i = 0; i < n_particles; i++)
+    //     f << "x,n,E,phi\n";
+    //     for (int i = 0; i < n_cells; i++)
     //     {
-    //         f << electrons[i].get_x() << "," << electrons[i].get_vx() + electrons[i].get_q() / electrons[i].get_m() * (dt / 2) * get_E(electrons[i].get_x()) << "\n";
+    //         double E_cell = 0.5 * (datagrid.E[i] + datagrid.E[i + 1]);
+    //         f << datagrid.x_cells[i] << "," << datagrid.n_e[i] << ","
+    //             << E_cell << "," << datagrid.phi[i] << "\n";
     //     }
     // }
-
-    {
-        std::ostringstream name;
-        name << output_dir << "/fields/fields_" << n_output << ".csv";
-        std::ofstream f(name.str());
-        f << std::setprecision(9);
-        f << "x,n,E,phi\n";
-        for (int i = 0; i < n_cells; i++)
-        {
-            double E_cell = 0.5 * (datagrid.E[i] + datagrid.E[i + 1]);
-            f << datagrid.x_cells[i] << "," << datagrid.n_e[i] << ","
-                << E_cell << "," << datagrid.phi[i] << "\n";
-        }
-    }
 
     {
         double ES = datagrid.get_E_energy();
